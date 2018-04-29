@@ -72,12 +72,20 @@ def visualize_saliency_with_losses(input_tensor, losses, seed_input, wrt_tensor=
     Returns:
         The normalized gradients of `seed_input` with respect to weighted `losses`.
     """
+    grads = compute_saliency_grads(input_tensor, losses, seed_input, wrt_tensor, grad_modifier)
+    return utils.normalize(grads)[0]
+
+def get_saliency_grads(model,layer_idx,filter_indices,seed_input,wrt_tensor=None,backprop_modifier=None, grad_modifier='absolute'):
+    losses, model = get_saliency_losses(model, layer_idx, filter_indices, backprop_modifier)
+    return compute_saliency_grads(model.input, losses, seed_input, wrt_tensor, grad_modifier)
+    
+def compute_saliency_grads(input_tensor, losses, seed_input, wrt_tensor, grad_modifier):
     opt = Optimizer(input_tensor, losses, wrt_tensor=wrt_tensor, norm_grads=False)
     grads = opt.minimize(seed_input=seed_input, max_iter=1, grad_modifier=grad_modifier, verbose=False)[1]
-
     channel_idx = 1 if K.image_data_format() == 'channels_first' else -1
-    grads = np.max(grads, axis=channel_idx)
-    return utils.normalize(grads)[0]
+    #TODO instead of using the max this can be used for detecting colour features
+    grads = np.mean(grads, axis=channel_idx)
+    return grads
 
 
 def visualize_saliency(model, layer_idx, filter_indices, seed_input,
@@ -115,16 +123,20 @@ def visualize_saliency(model, layer_idx, filter_indices, seed_input,
         The heatmap image indicating the `seed_input` regions whose change would most contribute towards
         maximizing the output of `filter_indices`.
     """
+    losses, model = get_saliency_losses(model, layer_idx, filter_indices, backprop_modifier)
+    return visualize_saliency_with_losses(model.input, losses, seed_input, wrt_tensor, grad_modifier)
+
+
+def get_saliency_losses(model, layer_idx, filter_indices, backprop_modifier):
     if backprop_modifier is not None:
         modifier_fn = get(backprop_modifier)
         model = modifier_fn(model)
-
     # `ActivationMaximization` loss reduces as outputs get large, hence negative gradients indicate the direction
     # for increasing activations. Multiply with -1 so that positive gradients indicate increase instead.
     losses = [
         (ActivationMaximization(model.layers[layer_idx], filter_indices), -1)
     ]
-    return visualize_saliency_with_losses(model.input, losses, seed_input, wrt_tensor, grad_modifier)
+    return losses, model
 
 
 def visualize_cam_with_losses(input_tensor, losses, seed_input, penultimate_layer, grad_modifier=None):

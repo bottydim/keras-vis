@@ -8,6 +8,7 @@ from .saliency import visualize_saliency_with_losses
 from .saliency import visualize_saliency
 from .saliency import visualize_cam_with_losses
 from .saliency import visualize_cam
+from .saliency import get_saliency_grads
 
 from keras import backend as K
 

@@ -6,7 +6,11 @@ import tempfile
 import math
 import json
 import six
-
+from skimage import color
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import pylab
 import numpy as np
 import matplotlib.font_manager as fontman
 
@@ -342,6 +346,92 @@ class _BackendAgnosticImageSlice(object):
             item_slice.append(item_slice.pop(1))
             return tuple(item_slice)
 
+
+def vis_square(weights, padsize=1, padval=0):
+    '''
+    Courtesy of Petar Velichkovic
+    :param weights:
+    :param padsize:
+    :param padval:
+    :return:
+
+    first_layer_weights = model.layers[1].get_weights()
+
+# first_layer_weights[0] stores the connection weights
+# first_layer_weights[1] stores the bias weights
+# For now we're interrested in the connections
+filters = first_layer_weights[0]
+
+# Visualise the filters
+vis_square(filters.transpose(3, 2, 0, 1))
+filters.transpose(3, 2, 0, 1).shape
+Out[91]:
+(64, 3, 3, 3)
+    '''
+    # Avoids modifying the network weights
+    data = np.copy(weights)
+
+    # Normalize the inputs
+    data -= data.min()
+    data /= data.max()
+
+    # Lets tile the inputs
+    # How many inputs per row
+    # 8x8
+    n = int(np.ceil(np.sqrt(data.shape[0])))
+
+    # Add padding between inputs
+    padding = ((0, n ** 2 - data.shape[0]), (0, padsize), (0, padsize)) + ((0, 0),) * (data.ndim - 3)
+    data = np.pad(data, padding, mode='constant', constant_values=(padval, padval))
+
+    # place the filters on an n by n grid
+    data = data.reshape((n, n) + data.shape[1:])
+
+    # merge the filters contents onto a single image
+    data = data.transpose((0, 2, 1, 3) + tuple(range(4, data.ndim)))
+    data = data.reshape((n * data.shape[1], n * data.shape[3]) + data.shape[4:])
+
+    # show the filter
+    fig = plt.figure(figsize=(8, 8))
+    plt.imshow(data)
+    plt.grid(False)
+
+def get_overlayed_image(x, c, gray_factor_bg=0.3,alpha = 0.5):
+    '''
+    For an image x and a relevance vector c, overlay the image with the
+    relevance vector to visualise the influence of the image pixels.
+
+    From: https://github.com/lmzintgraf/DeepVis-PredDiff/blob/master/utils_visualise.py
+    '''
+    imDim = x.shape[0]
+
+    if np.ndim(c) == 1:
+        c = c.reshape((imDim, imDim))
+    if np.ndim(x) == 2:  # this happens with the MNIST Data
+        x = 1 - np.dstack((x, x, x)) * gray_factor_bg  # make it a bit grayish
+    if np.ndim(x) == 3:  # this is what happens with cifar data
+        x = color.rgb2gray(x)
+        x = 1 - (1 - x) * 0.5
+        x = np.dstack((x, x, x))
+
+
+
+    # Construct a colour image to superimpose
+    im = plt.imshow(c, cmap=cm.seismic, vmin=-np.max(np.abs(c)), vmax=np.max(np.abs(c)), interpolation='nearest')
+    color_mask = im.to_rgba(c)[:, :, [0, 1, 2]]
+
+    # Convert the input image and color mask to Hue Saturation Value (HSV) colorspace
+    img_hsv = color.rgb2hsv(x)
+    color_mask_hsv = color.rgb2hsv(color_mask)
+
+    # Replace the hue and saturation of the original image
+    # with that of the color mask
+    img_hsv[..., 0] = color_mask_hsv[..., 0]
+    img_hsv[..., 1] = color_mask_hsv[..., 1] * alpha
+
+    img_masked = color.hsv2rgb(img_hsv)
+
+    return img_masked
 
 """Slice utility to make image slicing uniform across various `image_data_format`.
 Example:
